@@ -1,66 +1,61 @@
 const express = require('express');
-const app = express();
 const tracer = require('dd-trace').init({
-  logInjection: true
+  logInjection: true, // Automatically inject trace information into logs
+});
+const winston = require('winston');
+
+const app = express();
+
+// Create a Winston logger instance
+const logger = winston.createLogger({
+  level: 'info', // Set log level
+  format: winston.format.json(), // Use JSON formatting
+  transports: [
+    new winston.transports.Console(), // Log to console for PM2 to capture
+  ],
 });
 
-// Middleware to parse JSON payloads if needed
+// Replace console.log and console.error with Winston
+console.log = (message) => logger.info(message);
+console.error = (message) => logger.error(message);
+
+// Middleware to parse JSON payloads
 app.use(express.json());
 
-app.use((err, req, res, next) => {
-  console.error({
-      message: err.message,
-      stack: err.stack,
-      trace_id: tracer.scope().active()?.context()?.toTraceId(),
-      span_id: tracer.scope().active()?.context()?.toSpanId(),
-  });
-
-  res.status(500).json({ message: err.message });
-});
-
-// A route that triggers a generic error
+// Routes that trigger various errors
 app.get('/error', (req, res, next) => {
   try {
     throw new Error("This is a test error!");
   } catch (err) {
-    // The error will be passed down to the error-handling middleware
     next(err);
   }
 });
 
-// A route that triggers a runtime TypeError (e.g., calling a method on undefined)
 app.get('/type-error', (req, res, next) => {
   try {
     const obj = undefined;
-    // This will cause a TypeError
-    obj.someProperty = "This should fail";
+    obj.someProperty = "This should fail"; // Causes a TypeError
   } catch (err) {
     next(err);
   }
 });
 
-// Another route that triggers a reference error (using an undefined variable)
 app.get('/reference-error', (req, res, next) => {
   try {
-    // Attempting to use an undeclared variable 'notDefined' will cause a ReferenceError
-    console.log(notDefined);
+    console.log(notDefined); // Causes a ReferenceError
   } catch (err) {
     next(err);
   }
 });
 
 // Error-handling middleware
-// This middleware will catch errors and print them out.
-// Datadog and other APM tools can capture these stack traces.
 app.use((err, req, res, next) => {
-  console.error("An error occurred:", err);
-  // Include stack trace in response for testing; 
-  // In production, you might want to omit or sanitize this.
+  logger.error("An error occurred", { error: err }); // Log the error with Winston
   res.status(500).json({ message: err.message, stack: err.stack });
 });
 
 // Start the server
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
-  console.log(`Server running on http://localhost:${port}`);
+  logger.info(`Server running on http://localhost:${port}`);
 });
