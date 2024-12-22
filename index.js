@@ -7,6 +7,17 @@ const tracer = require('dd-trace').init({
 // Middleware to parse JSON payloads if needed
 app.use(express.json());
 
+app.use((err, req, res, next) => {
+  console.error({
+      message: err.message,
+      stack: err.stack,
+      trace_id: tracer.scope().active()?.context()?.toTraceId(),
+      span_id: tracer.scope().active()?.context()?.toSpanId(),
+  });
+
+  res.status(500).json({ message: err.message });
+});
+
 // A route that triggers a generic error
 app.get('/error', (req, res, next) => {
   try {
